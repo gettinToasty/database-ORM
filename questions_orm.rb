@@ -11,21 +11,94 @@ class QuestionsDatabase < SQLite3::Database
   end
 end
 
-class User
-
-  attr_accessor :fname, :lname
+class ModelBase
 
   def self.find_by_id(id)
     data = QuestionsDatabase.instance.execute(<<-SQL, id)
       SELECT
         *
       FROM
-        users
+        #{self.tableize}
       WHERE
         id = ?
     SQL
-    User.new(data.first)
+    self.new(data.first)
   end
+
+  def self.all
+    data = QuestionsDatabase.instance.execute(<<-SQL)
+      SELECT
+        *
+      FROM
+        #{self.tableize}
+    SQL
+  end
+
+  def self.tableize
+    self.to_s.split(/(?<!^)(?=[A-Z])/).map(&:downcase).join("_") + "s"
+  end
+
+  def self.where(options)
+    cols = options.keys.map(&:to_s)
+    vals = options.values
+    data = QuestionsDatabase.instance.execute(<<-SQL)
+      SELECT
+        *
+      FROM
+        #{self.tableize}
+      WHERE
+        #{ array = []
+          cols.each { |col| array << (col + ' = ' + '\'' + vals.shift.to_s + '\'') }
+          array.join(' AND ')
+        }
+    SQL
+    data.map { |datum| self.new(datum) }
+  end
+
+  def save
+    vars = self.instance_variables.reverse
+    vars_str = vars.map { |el| el.to_s([1..-1]) }
+    if @id
+      QuestionsDatabase.instance.execute(<<-SQL, *vars)
+      UPDATE
+        users
+      SET
+        #{
+        str = ""
+        vars_str[0...-1].each { |el| str += el + ' = ?' }
+        str
+        }
+      WHERE
+        id = ?
+      SQL
+    else
+      QuestionsDatabase.instance.execute(<<-SQL, *vars)
+      INSERT INTO
+        #{self.tableize} (#{vals_str[0...-1].join(', ')})
+      VALUES
+        (#{
+          arr = []
+          vals_str[0...-1].length.times { arr << '?' }
+          arr.join(', ')})
+      SQL
+
+      @id = QuestionsDatabase.instance.last_insert_row_id
+    end
+  end
+
+  def self.method_missing(method_name, *args)
+    keys = method_name.to_s.match(/(?:find_by_)(.+)/)
+    keys = keys[1].split('_and_')
+    hash = {}
+    keys.each { |key| hash[key] = args.shift }
+    self.where(hash)
+  end
+
+end
+
+class User < ModelBase
+
+  attr_accessor :fname, :lname
 
   def self.find_by_name(name)
     data = QuestionsDatabase.instance.execute(<<-SQL, name)
@@ -64,7 +137,8 @@ class User
   def average_karma
     data = QuestionsDatabase.instance.execute(<<-SQL, @id)
       SELECT
-        (COUNT(question_likes.like_status) / CAST(COUNT(users_questions.id) AS FLOAT)) AS avg_karma
+        (COUNT(question_likes.like_status) /
+          CAST(COUNT(users_questions.id) AS FLOAT)) AS avg_karma
       FROM
         (SELECT
           DISTINCT *
@@ -80,32 +154,9 @@ class User
     data.first["avg_karma"]
   end
 
-  def save
-    if @id
-      QuestionsDatabase.instance.execute(<<-SQL, @fname, @lname, @id)
-      UPDATE
-        users
-      SET
-        fname = ?,
-        lname = ?
-      WHERE
-        id = ?
-      SQL
-    else
-      QuestionsDatabase.instance.execute(<<-SQL, @fname, @lname)
-      INSERT INTO
-        users (fname, lname)
-      VALUES
-        (? , ?)
-      SQL
-
-      @id = QuestionsDatabase.instance.last_insert_row_id
-    end
-  end
-
 end
 
-class Question
+class Question < ModelBase
 
   attr_accessor :user_id, :title, :body
 
@@ -123,18 +174,6 @@ class Question
 
   def self.most_followed(n)
     QuestionFollow.most_followed_questions(n)
-  end
-
-  def self.find_by_id(id)
-    data = QuestionsDatabase.instance.execute(<<-SQL, id)
-      SELECT
-        *
-      FROM
-        questions
-      WHERE
-        id = ?
-    SQL
-    Question.new(data.first)
   end
 
   def self.most_liked(n)
@@ -168,45 +207,9 @@ class Question
     QuestionLike.num_likes_for_question_id(@id)
   end
 
-  def save
-    if @id
-      QuestionsDatabase.instance.execute(<<-SQL, @user_id, @title, @body, @id)
-      UPDATE
-        users
-      SET
-        user_id = ?,
-        title = ?,
-        body = ?
-      WHERE
-        id = ?
-      SQL
-    else
-      QuestionsDatabase.instance.execute(<<-SQL, @title, @body, @user_id)
-      INSERT INTO
-        users (title, body, user_id)
-      VALUES
-        (?, ?, ?)
-      SQL
-
-      @id = QuestionsDatabase.instance.last_insert_row_id
-    end
-  end
-
 end
 
-class QuestionFollow
-
-  def self.find_by_id(id)
-    data = QuestionsDatabase.instance.execute(<<-SQL, id)
-      SELECT
-        *
-      FROM
-        question_follows
-      WHERE
-        id = ?
-    SQL
-    QuestionFollow.new(data.first)
-  end
+class QuestionFollow < ModelBase
 
   def self.followers_for_question_id(question_id)
     data = QuestionsDatabase.instance.execute(<<-SQL, question_id)
@@ -263,7 +266,7 @@ class QuestionFollow
 
 end
 
-class Reply
+class Reply < ModelBase
 
   attr_accessor :question_id, :parent_id, :body, :user_id
 
@@ -289,18 +292,6 @@ class Reply
       question_id = ?
     SQL
     data.map { |datum| Reply.new(datum) }
-  end
-
-  def self.find_by_id(id)
-    data = QuestionsDatabase.instance.execute(<<-SQL, id)
-      SELECT
-        *
-      FROM
-        replies
-      WHERE
-        id = ?
-    SQL
-    Reply.new(data.first)
   end
 
   def initialize(options)
@@ -335,46 +326,9 @@ class Reply
     data.map { |datum| Reply.new(datum) }
   end
 
-  def save
-    if @id
-      QuestionsDatabase.instance.execute(<<-SQL, @user_id, @question_id, @parent_id, @body, @id)
-      UPDATE
-        users
-      SET
-        user_id = ?,
-        question_id = ?,
-        parent_id = ?,
-        body = ?
-      WHERE
-        id = ?
-      SQL
-    else
-      QuestionsDatabase.instance.execute(<<-SQL, @question_id, @parent_id, @body, @user_id)
-      INSERT INTO
-        users (question_id, parent_id, body, user_id)
-      VALUES
-        (?, ?, ?, ?)
-      SQL
-
-      @id = QuestionsDatabase.instance.last_insert_row_id
-    end
-  end
-
 end
 
-class QuestionLike
-
-  def self.find_by_id(id)
-    data = QuestionsDatabase.instance.execute(<<-SQL, id)
-      SELECT
-        *
-      FROM
-        question_likes
-      WHERE
-        id = ?
-    SQL
-    QuestionLike.new(data.first)
-  end
+class QuestionLike < ModelBase
 
   def self.likers_for_question_id(question_id)
     data = QuestionsDatabase.instance.execute(<<-SQL, question_id)
@@ -424,7 +378,7 @@ class QuestionLike
       GROUP BY
         question_likes.user_id
       ORDER BY
-        COUNT(question_likes.question_id) DESC
+        COUNT(*) DESC
       LIMIT ?
     SQL
     data.map { |datum| Question.new(datum) }
