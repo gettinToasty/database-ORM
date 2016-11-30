@@ -56,12 +56,8 @@ class ModelBase
   end
 
   def self.method_missing(method_name, *args)
-    if method_name.to_s.starts_with?('find_by_')
-      keys = method_name.to_s.match(/(?:find_by_)(.+)/)
-      keys = keys[1].split('_and_')
-      hash = {}
-      keys.each { |key| hash[key] = args.shift }
-      self.where(hash)
+    if method_name =~ /find_by_(\w+)/
+      call_where(method_name, *args)
     else
       super
     end
@@ -100,6 +96,15 @@ class ModelBase
 
       @id = QuestionsDatabase.instance.last_insert_row_id
     end
+  end
+
+private
+  def call_where(method_name, *args)
+    keys = method_name =~ /(?:find_by_)(.+)/
+    keys = keys[1].split('_and_')
+    hash = {}
+    keys.each { |key| hash[key] = args.shift }
+    self.where(hash)
   end
 
 end
