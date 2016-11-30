@@ -1,4 +1,4 @@
-require_relative 'questions_database.rb'
+require_relative 'questions_database'
 
 class ModelBase
 
