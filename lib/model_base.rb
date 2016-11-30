@@ -55,6 +55,22 @@ class ModelBase
     data.map { |datum| self.new(datum) }
   end
 
+  def self.method_missing(method_name, *args)
+    if method_name.to_s.starts_with?('find_by_')
+      keys = method_name.to_s.match(/(?:find_by_)(.+)/)
+      keys = keys[1].split('_and_')
+      hash = {}
+      keys.each { |key| hash[key] = args.shift }
+      self.where(hash)
+    else
+      super
+    end
+  end
+
+  def self.respond_to_missing?(method_name, *args)
+    method_name =~ /find_by_(\w+)/ || super
+  end
+
   def save
     vars = self.instance_variables.reverse
     vars_str = vars.map { |el| el.to_s([1..-1]) }
@@ -84,14 +100,6 @@ class ModelBase
 
       @id = QuestionsDatabase.instance.last_insert_row_id
     end
-  end
-
-  def self.method_missing(method_name, *args)
-    keys = method_name.to_s.match(/(?:find_by_)(.+)/)
-    keys = keys[1].split('_and_')
-    hash = {}
-    keys.each { |key| hash[key] = args.shift }
-    self.where(hash)
   end
 
 end
