@@ -39,19 +39,30 @@ class ModelBase
   end
 
   def self.where(options)
-    cols = options.keys.map(&:to_s)
-    vals = options.values
-    data = QuestionsDatabase.instance.execute(<<-SQL)
-      SELECT
-        *
-      FROM
-        #{self.tableize}
-      WHERE
-        #{ array = []
-          cols.each { |col| array << (col + ' = ' + '\'' + vals.shift.to_s + '\'') }
-          array.join(' AND ')
-        }
-    SQL
+    if options.is_a?(Hash)
+      cols = options.keys.map(&:to_s)
+      vals = options.values
+      data = QuestionsDatabase.instance.execute(<<-SQL)
+        SELECT
+          *
+        FROM
+          #{self.tableize}
+        WHERE
+          #{ array = []
+            cols.each { |col| array << (col + ' = ' + '\'' + vals.shift.to_s + '\'') }
+            array.join(' AND ')
+          }
+      SQL
+    elsif options.is_a?(String)
+      data = QuestionsDatabase.instance.execute(<<-SQL)
+        SELECT
+          *
+        FROM
+          #{self.tableize}
+        WHERE
+          #{options}
+      SQL
+    end
     data.map { |datum| self.new(datum) }
   end
 
