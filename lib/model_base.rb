@@ -24,6 +24,7 @@ class ModelBase
   end
 
   def self.tableize
+    return "replies" if self.is_a?(Reply)
     self.to_s.split(/(?<!^)(?=[A-Z])/).map(&:downcase).join("_") + "s"
   end
 
